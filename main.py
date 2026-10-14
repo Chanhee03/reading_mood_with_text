@@ -143,10 +143,7 @@ def analyze_emotion_with_jev(input_text: str, neologisms: list[str]) -> EmotionA
         result = client.system_one(
             state=build_state(input_text, neologisms),
             questions={
-                "primary_emotion": Choice(
-                    criteria=emotion_criteria
-                ),
-                "secondary_emotion": Choice(
+                "emotion": Choice(
                     criteria=emotion_criteria
                 ),
                 "intensity": Score(
@@ -165,15 +162,16 @@ def analyze_emotion_with_jev(input_text: str, neologisms: list[str]) -> EmotionA
             }
         )
 
-    # 응답 데이터 파싱 및 신뢰도 추출 (수정 완료: answers 접근 및 속성명 변경)
-    primary_emotion_answer = result.answers["primary_emotion"]
-    secondary_emotion_answer = result.answers["secondary_emotion"]
+    # 응답 데이터 파싱 및 신뢰도 추출
+    # 감정 질문 하나의 확률 분포에서 1위를 주 감정, 2위를 부 감정으로 사용해 둘이 겹치지 않게 합니다.
+    emotion_answer = result.answers["emotion"]
     intensity_answer = result.answers["intensity"]
+    primary, secondary = sorted(emotion_answer.probabilities, key=emotion_answer.probabilities.get, reverse=True)[:2]
 
     parsed_data = {
-        "primary_emotion": primary_emotion_answer.choice,
-        "secondary_emotion": secondary_emotion_answer.choice,
-        "confidence_score": primary_emotion_answer.confidence, 
+        "primary_emotion": primary,
+        "secondary_emotion": secondary,
+        "confidence_score": emotion_answer.confidence,
         "intensity": int(round(intensity_answer.score))
     }
 
