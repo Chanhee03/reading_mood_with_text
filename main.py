@@ -1,5 +1,6 @@
 import base64
 import json
+import readline  # input()에서 한글을 백스페이스로 지울 때 바이트가 남지 않도록 글자 단위 편집 사용
 import sys
 from enum import Enum
 from pathlib import Path
