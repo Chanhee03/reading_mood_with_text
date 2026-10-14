@@ -1,4 +1,5 @@
 import base64
+import json
 import sys
 from enum import Enum
 from pathlib import Path
@@ -65,8 +66,28 @@ EMOTION_DISPLAY = {
     Emotion26.TRIUMPH: "승리감",
 }
 
-# 감정별 테루테루보즈 이미지 폴더 (PyInstaller 빌드 시에는 _MEIPASS 기준)
-EMOTION_IMAGE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "emotions"
+# 리소스 기준 폴더 (PyInstaller 빌드 시에는 _MEIPASS 기준)
+BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+
+# 감정별 테루테루보즈 이미지 폴더
+EMOTION_IMAGE_DIR = BASE_DIR / "emotions"
+
+# 신조어별 예시 대화 사전 (KoCulture-Dialogues, build_neologisms.py로 생성)
+NEOLOGISMS = json.loads((BASE_DIR / "data" / "neologisms.json").read_text())
+
+def find_neologisms(text: str) -> list[str]:
+    # 한 글자 신조어는 일반 단어에 너무 자주 걸리므로 두 글자 이상만 찾습니다.
+    return [word for word in NEOLOGISMS if len(word) >= 2 and word in text]
+
+def build_state(text: str, neologisms: list[str]) -> str:
+    # 신조어가 있으면 용례를 참고 자료로 덧붙여 Jev가 뜻을 파악할 수 있게 합니다.
+    if not neologisms:
+        return text
+    lines = ["[분석할 문장]", text, "", "[참고: 위 문장에 쓰인 신조어의 용례. 감정 판단 대상이 아니며 신조어의 뜻을 이해하는 데만 사용]"]
+    for word in neologisms:
+        for question, answer in NEOLOGISMS[word]:
+            lines.append(f"- {word}: \"{question}\" / \"{answer}\"")
+    return "\n".join(lines)
 
 def print_emotion_image(emotion: Emotion26):
     # iTerm2 인라인 이미지 프로토콜로 출력 (JOY처럼 이미지가 없으면 생략)
@@ -84,7 +105,7 @@ class EmotionAnalysisResponse(BaseModel):
     intensity: int                  # 감정의 강도 (1 ~ 9)
 
 # 3. Jev API 호출 함수
-def analyze_emotion_with_jev(input_text: str) -> EmotionAnalysisResponse:
+def analyze_emotion_with_jev(input_text: str, neologisms: list[str]) -> EmotionAnalysisResponse:
     load_dotenv()
 
     # Jev 모델이 26가지 감정을 정확히 분류할 수 있도록 각 감정의 의미(기준)를 딕셔너리로 정의합니다.
@@ -119,7 +140,7 @@ def analyze_emotion_with_jev(input_text: str) -> EmotionAnalysisResponse:
 
     with TypeSafeClient() as client:
         result = client.system_one(
-            state=input_text,  
+            state=build_state(input_text, neologisms),
             questions={
                 "primary_emotion": Choice(
                     criteria=emotion_criteria
@@ -162,14 +183,17 @@ def main():
     customer_review = input("입력: ")
     
     
-    # API 호출 및 결과 받아오기
-    analysis = analyze_emotion_with_jev(customer_review)
+    # 신조어 탐지 후 API 호출 및 결과 받아오기
+    neologisms = find_neologisms(customer_review)
+    analysis = analyze_emotion_with_jev(customer_review, neologisms)
         
     primary_name = EMOTION_DISPLAY[analysis.primary_emotion]
     secondary_name = EMOTION_DISPLAY[analysis.secondary_emotion]
     intensity_bar = "🟧" * analysis.intensity + "⬜" * (9 - analysis.intensity)
 
     print("\n[분석 완료]")
+    if neologisms:
+        print(f"신조어: {', '.join(neologisms)}")
     print_emotion_image(analysis.primary_emotion)
     print(f"주 감정: {primary_name}")
     print_emotion_image(analysis.secondary_emotion)

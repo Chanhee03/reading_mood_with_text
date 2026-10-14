@@ -2,6 +2,21 @@
 
 입력한 문장에서 감정을 판독하는 CLI 도구입니다. TypeSafe SDK(`typesafe-sdk`)의 Jev 모델(`system_one`)로 26가지 감정 중 주 감정과 부 감정, 강도, 신뢰도를 분석하고, 감정별 테루테루보즈 이미지와 함께 결과를 보여줍니다.
 
+## 신조어 처리
+
+입력 문장에 신조어가 있으면 [KoCulture-Dialogues](https://huggingface.co/datasets/huggingface-KREW/KoCulture-Dialogues) 데이터셋에서 그 신조어가 쓰인 예시 대화를 찾아, 참고 자료로 함께 Jev에 넘깁니다. Jev가 신조어의 뜻을 문맥으로 파악해 감정을 더 정확히 판독하도록 하기 위한 것입니다. 문장 자체를 표준어로 바꾸지는 않습니다.
+
+- 사전: `data/neologisms.json` (신조어 354개, 단어당 예시 대화 최대 2개)
+- 탐지: 입력 문장에 신조어가 그대로 들어 있는지 확인합니다. 한 글자 신조어(`갓`, `각` 등)는 일반 단어와 구분이 안 돼 제외합니다.
+- 한계: `사이다`, `고구마`처럼 일반 단어와 같은 신조어는 원래 뜻으로 쓰여도 신조어로 잡힙니다. `~에 진심인 편`처럼 틀 형태인 신조어는 탐지되지 않습니다.
+
+사전을 다시 만들려면:
+
+```bash
+pip install pyarrow
+python build_neologisms.py
+```
+
 ## 출력 예시
 
 ```
@@ -70,8 +85,14 @@ pyinstaller main.spec
 ## 파일 구성
 
 ```
-main.py      # 감정 분석 CLI (Jev 호출, 결과 출력)
-main.spec    # PyInstaller 빌드 설정
-emotions/    # 감정별 테루테루보즈 이미지 (<EMOTION>.png)
-base.ts      # 초기 설계용 TypeScript 스키마 (27가지 감정 버전, 현재 미사용)
+main.py              # 감정 분석 CLI (신조어 탐지, Jev 호출, 결과 출력)
+main.spec            # PyInstaller 빌드 설정
+emotions/            # 감정별 테루테루보즈 이미지 (<EMOTION>.png)
+data/neologisms.json # 신조어별 예시 대화 사전
+build_neologisms.py  # 신조어 사전 생성 스크립트
+base.ts              # 초기 설계용 TypeScript 스키마 (27가지 감정 버전, 현재 미사용)
 ```
+
+## 라이선스 참고
+
+`data/neologisms.json`은 Hugging Face KREW의 [KoCulture-Dialogues](https://huggingface.co/datasets/huggingface-KREW/KoCulture-Dialogues)에서 가공한 데이터로, 원 데이터셋의 CC BY-NC-SA 4.0 라이선스를 따릅니다 (비상업적 이용만 가능).
