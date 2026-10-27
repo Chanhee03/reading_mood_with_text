@@ -6,7 +6,7 @@ from enum import Enum
 from pathlib import Path
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from typesafe_sdk import TypeSafeClient, Choice, Score
+from openai import OpenAI
 
 # 1. 26가지 기본 감정을 고정된 값(Enum)으로 정의합니다.
 class Emotion26(str, Enum):
@@ -81,7 +81,7 @@ def find_neologisms(text: str) -> list[str]:
     return [word for word in NEOLOGISMS if len(word) >= 2 and word in text]
 
 def build_state(text: str, neologisms: list[str]) -> str:
-    # 신조어가 있으면 용례를 참고 자료로 덧붙여 Jev가 뜻을 파악할 수 있게 합니다.
+    # 신조어가 있으면 용례를 참고 자료로 덧붙여 모델이 뜻을 파악할 수 있게 합니다.
     if not neologisms:
         return text
     lines = ["[분석할 문장]", text, "", "[참고: 위 문장에 쓰인 신조어의 용례. 감정 판단 대상이 아니며 신조어의 뜻을 이해하는 데만 사용]"]
@@ -98,18 +98,41 @@ def print_emotion_image(emotion: Emotion26):
     data = base64.b64encode(path.read_bytes()).decode()
     print(f"\033]1337;File=inline=1;width=12;preserveAspectRatio=1:{data}\a")
 
-# 2. Jev 모델이 응답할 완벽한 JSON 구조를 Pydantic 모델로 강제합니다.
+# 2. GPT 모델이 응답할 JSON 구조를 Pydantic 모델로 강제합니다 (Structured Outputs).
 class EmotionAnalysisResponse(BaseModel):
     primary_emotion: Emotion26      # 가장 주된 감정
     secondary_emotion: Emotion26    # 부가적인 감정
     confidence_score: float         # 판독 신뢰도 (0.0 ~ 1.0)
     intensity: int                  # 감정의 강도 (1 ~ 9)
+    advice: str | None              # 부정적인 감정이 강할 때의 대응 코멘트 (해당 없으면 None)
 
-# 3. Jev API 호출 함수
-def analyze_emotion_with_jev(input_text: str, neologisms: list[str]) -> EmotionAnalysisResponse:
+# 부정적인 감정: 주 감정이 이 중 하나이고 강도가 ADVICE_MIN_INTENSITY 이상이면 대응 코멘트를 받습니다.
+NEGATIVE_EMOTIONS = [
+    Emotion26.ANXIETY, Emotion26.AWKWARDNESS, Emotion26.BOREDOM, Emotion26.CONFUSION,
+    Emotion26.DISGUST, Emotion26.EMPATHETIC_PAIN, Emotion26.ENVY, Emotion26.FEAR,
+    Emotion26.HORROR, Emotion26.SADNESS,
+]
+ADVICE_MIN_INTENSITY = 7
+
+SYSTEM_PROMPT = """너는 한국어 문장에 담긴 감정을 판독한다.
+
+아래 26가지 감정 중 가장 두드러진 감정을 primary_emotion으로, 함께 나타나는 감정을 secondary_emotion으로 고른다. 두 감정은 반드시 서로 달라야 한다.
+{criteria}
+
+intensity는 primary_emotion의 강도이며 1~9 정수로 답한다.
+{intensity}
+
+confidence_score는 primary_emotion 판단에 대한 확신도로 0.0~1.0 사이 값으로 답한다.
+
+advice: primary_emotion이 부정적인 감정({negative}) 중 하나이고 intensity가 {min_intensity} 이상이면, 이 감정을 느끼는 사람이 지금 해볼 수 있는 대응 방법을 2~3문장의 따뜻한 한국어 존댓말로 쓴다. 그 외에는 null로 둔다.
+
+입력에 [참고] 섹션이 있으면 신조어의 뜻을 이해하는 데만 쓰고, 감정 판단 대상으로 삼지 않는다."""
+
+# 3. GPT API 호출 함수
+def analyze_emotion_with_gpt(input_text: str, neologisms: list[str]) -> EmotionAnalysisResponse:
     load_dotenv()
 
-    # Jev 모델이 26가지 감정을 정확히 분류할 수 있도록 각 감정의 의미(기준)를 딕셔너리로 정의합니다.
+    # 모델이 26가지 감정을 정확히 분류할 수 있도록 각 감정의 의미(기준)를 딕셔너리로 정의합니다.
     emotion_criteria = {
         Emotion26.ADMIRATION.value: "존경하거나 우러러보는 감정",
         Emotion26.ADORATION.value: "깊이 흠모하거나 애정을 느끼는 감정",
@@ -139,43 +162,35 @@ def analyze_emotion_with_jev(input_text: str, neologisms: list[str]) -> EmotionA
         Emotion26.TRIUMPH.value: "승리감, 성취감"
     }
 
-    with TypeSafeClient() as client:
-        result = client.system_one(
-            state=build_state(input_text, neologisms),
-            questions={
-                "emotion": Choice(
-                    criteria=emotion_criteria
-                ),
-                "intensity": Score(
-                    criteria=[
-                        "1점: 감정이 아주 희미하게 느껴짐",
-                        "2점: 감정이 약하게 느껴짐",
-                        "3점: 감정이 조금 느껴짐",
-                        "4점: 감정이 어느 정도 느껴짐",
-                        "5점: 감정이 뚜렷하고 일반적인 수준으로 느껴짐",
-                        "6점: 감정이 꽤 강하게 느껴짐",
-                        "7점: 감정이 강하게 느껴짐 (행동에 영향을 줄 정도)",
-                        "8점: 감정이 매우 강하게 느껴짐 (이성적 판단이 흐려질 정도)",
-                        "9점: 감정이 통제하기 힘들 정도로 극도로 강렬함"
-                    ]
-                )
-            }
-        )
+    intensity_criteria = [
+        "1점: 감정이 아주 희미하게 느껴짐",
+        "2점: 감정이 약하게 느껴짐",
+        "3점: 감정이 조금 느껴짐",
+        "4점: 감정이 어느 정도 느껴짐",
+        "5점: 감정이 뚜렷하고 일반적인 수준으로 느껴짐",
+        "6점: 감정이 꽤 강하게 느껴짐",
+        "7점: 감정이 강하게 느껴짐 (행동에 영향을 줄 정도)",
+        "8점: 감정이 매우 강하게 느껴짐 (이성적 판단이 흐려질 정도)",
+        "9점: 감정이 통제하기 힘들 정도로 극도로 강렬함"
+    ]
 
-    # 응답 데이터 파싱 및 신뢰도 추출
-    # 감정 질문 하나의 확률 분포에서 1위를 주 감정, 2위를 부 감정으로 사용해 둘이 겹치지 않게 합니다.
-    emotion_answer = result.answers["emotion"]
-    intensity_answer = result.answers["intensity"]
-    primary, secondary = sorted(emotion_answer.probabilities, key=emotion_answer.probabilities.get, reverse=True)[:2]
+    system_prompt = SYSTEM_PROMPT.format(
+        criteria="\n".join(f"- {name}: {meaning}" for name, meaning in emotion_criteria.items()),
+        intensity="\n".join(intensity_criteria),
+        negative=", ".join(emotion.value for emotion in NEGATIVE_EMOTIONS),
+        min_intensity=ADVICE_MIN_INTENSITY,
+    )
 
-    parsed_data = {
-        "primary_emotion": primary,
-        "secondary_emotion": secondary,
-        "confidence_score": emotion_answer.confidence,
-        "intensity": int(round(intensity_answer.score))
-    }
-
-    return EmotionAnalysisResponse(**parsed_data)
+    client = OpenAI()
+    response = client.responses.parse(
+        model="gpt-4.1",
+        input=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": build_state(input_text, neologisms)},
+        ],
+        text_format=EmotionAnalysisResponse,
+    )
+    return response.output_parsed
 
 # 4. 프로그램 실행의 진입점이 되는 main 함수
 def main():
@@ -184,7 +199,7 @@ def main():
     
     # 신조어 탐지 후 API 호출 및 결과 받아오기
     neologisms = find_neologisms(customer_review)
-    analysis = analyze_emotion_with_jev(customer_review, neologisms)
+    analysis = analyze_emotion_with_gpt(customer_review, neologisms)
         
     primary_name = EMOTION_DISPLAY[analysis.primary_emotion]
     secondary_name = EMOTION_DISPLAY[analysis.secondary_emotion]
@@ -199,6 +214,8 @@ def main():
     print(f"부 감정: {secondary_name}")
     print(f"강도:   {intensity_bar} ({analysis.intensity}/9)")
     print(f"신뢰도: {analysis.confidence_score:.0%}")
+    if analysis.advice:
+        print(f"\n[대응 코멘트]\n{analysis.advice}")
 
 if __name__ == "__main__":
     main()
