@@ -129,6 +129,58 @@ pyinstaller main.spec
 
 실행 파일도 `OPENAI_API_KEY`가 필요하므로, 실행하는 위치에 `.env`를 두거나 환경 변수로 설정하세요.
 
+## 평가
+
+외부 감정 말뭉치에서 뽑은 정답 라벨로 판독 방식과 모델을 비교합니다. 앱 실행에는 필요 없고, 평가할 때만 씁니다.
+
+### 평가 데이터
+
+| 감정 | 정답 라벨 출처 | 비고 |
+| --- | --- | --- |
+| 기쁨·공포·슬픔·분노 | [AI Hub 감성 대화 말뭉치](https://www.aihub.or.kr/aihubdata/data/view.do?dataSetSn=86)의 첫 사람 문장 | 1인칭으로 상황과 감정을 말하는 문장이라 일기 형식에 가장 가깝습니다. 대분류 '불안'을 공포로 봅니다. 상처·당황은 제외합니다. |
+| 신뢰·기대·놀람·혐오 | 국립국어원 감정 분석 말뭉치 (AI말평 2024, train·dev) | 플루치크 8감정 라벨입니다. 감정이 하나만 붙은 문장만 씁니다. SNS 글입니다. |
+
+- 평가 세트 `data/eval_external.json`: 감정당 150문장, 총 1,200문장. 최종 수치를 낼 때 한 번만 씁니다.
+- 개발용 세트 `data/eval_dev.json`: 평가 세트 문장을 빼고 감정당 40문장, 총 320문장. 프롬프트를 고칠 때 효과를 먼저 확인하는 데 씁니다.
+
+원본 말뭉치는 재배포가 금지되어 있어 저장소에 없습니다. 각 기관에서 받아 아래 위치에 두고 세트를 만듭니다.
+
+```
+한국어 감정 정보가 포함된 연속적 대화 데이터셋/감성대화말뭉치(최종데이터)_Training.xlsx
+NIKL_EA_2024/nikluge-감정분석-2024-{train,dev}.jsonl
+```
+
+```bash
+pip install openpyxl
+python build_eval_set.py                                     # 평가 세트
+python build_eval_set.py --per-emotion 40 --seed 1 \
+    --exclude data/eval_external.json --output data/eval_dev.json   # 개발용 세트
+```
+
+### 비교 실행
+
+`compare_sentiment.py`는 같은 문장을 여러 방식(LLM 단독, 감성사전 참고, Jev 1차 분류 참고)과 모델로 판독해 정답률, 감정별 정답률, 비용, 지연을 비교합니다. 감성사전 방식은 `data/sentiment.json`이 필요하고, Jev 방식은 `.env`에 `TYPESAFE_API_KEY`가 필요합니다.
+
+```bash
+pip install openpyxl kiwipiepy typesafe-sdk
+python compare_sentiment.py --eval data/eval_external.json --models gpt-4.1 \
+    --variants "3 근거단어" --save results/run.jsonl
+```
+
+`--save`를 주면 호출이 끝날 때마다 결과를 JSONL에 바로 저장합니다. 저장 항목은 정답 라벨, 판독 결과, Jev 확률, 토큰, 비용, 지연, LLM에 넘긴 참고 자료입니다. 실패한 호출은 3번까지 다시 시도하고, 같은 명령을 다시 실행하면 끝난 호출은 건너뛰고 나머지만 돌립니다. 실행 설정(프롬프트, 감정 정의, 가격표, 평가 파일 해시)은 `results/run.meta.json`에 남습니다.
+
+### 결과 (2026-11-16, 평가 세트 1,200문장, gpt-4.1)
+
+| 방식 | 감정 정의 | 주 감정 정답률 | 1,000회당 비용 |
+| --- | --- | --- | --- |
+| Jev 1차 분류 + 감성사전 (근거단어) | 이전 정의 | 53% | $2.60 |
+| 감성사전만 (근거단어) | 이전 정의 | 55% | $2.39 |
+| 감성사전만 (근거단어) | 플루치크 강도 3단계 | **59%** | $2.58 |
+
+- 감정 정의에 강도 3단계를 넣자 신뢰(19% → 39%)와 혐오(59% → 76%)가 크게 올랐습니다. 이전 정의와 비교한 McNemar 검정 결과는 p < 0.001입니다.
+- 분노(29%)와 공포(46%)는 슬픔으로 판독되는 경우가 많습니다. 하소연이 섞인 원본 문장이 많아 정답 라벨이 애매한 경우로 보입니다.
+- 부 감정, 강도, 대응 코멘트 여부는 정답 라벨이 없어 채점하지 않았습니다.
+
 ## 파일 구성
 
 ```
@@ -137,9 +189,16 @@ main.spec            # PyInstaller 빌드 설정
 emotions/            # 감정별 테루테루보즈 이미지 (<한글 감정 이름>.png, 예: 기쁨.png)
 data/neologisms.json # 신조어별 예시 대화 사전
 build_neologisms.py  # 신조어 사전 생성 스크립트
+build_eval_set.py    # 외부 말뭉치에서 평가·개발용 세트 생성
+compare_sentiment.py # 판독 방식·모델 비교 실험 (정답률, 비용, 결과 저장)
+build_sentiment.py   # 감성사전.xlsx → data/sentiment.json 변환
 base.ts              # 초기 설계용 TypeScript 스키마 (27가지 감정 버전, 현재 미사용)
 ```
+
+저장소에 없는 파일(재배포 금지, `.gitignore`): 원본 말뭉치 폴더, `감성사전.xlsx`, `data/sentiment.json`, `data/eval_external.json`, `data/eval_dev.json`, `results/`.
 
 ## 라이선스 참고
 
 `data/neologisms.json`은 Hugging Face KREW의 [KoCulture-Dialogues](https://huggingface.co/datasets/huggingface-KREW/KoCulture-Dialogues)에서 가공한 데이터로, 원 데이터셋의 CC BY-NC-SA 4.0 라이선스를 따릅니다 (비상업적 이용만 가능).
+
+평가에 쓰는 AI Hub 감성 대화 말뭉치와 국립국어원 감정 분석 말뭉치, 감성사전은 재배포가 금지되어 있어 저장소에 포함하지 않습니다. 이 자료에서 뽑은 평가 세트와 실행 결과도 원문 문장을 담고 있어 함께 제외합니다.
