@@ -8,63 +8,64 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
 
-# 1. 26가지 기본 감정을 고정된 값(Enum)으로 정의합니다.
-class Emotion26(str, Enum):
-    ADMIRATION = "ADMIRATION"                   # 존경
-    ADORATION = "ADORATION"                     # 흠모
-    AESTHETIC_APPRECIATION = "AESTHETIC_APPRECIATION" # 심미적 감상
-    AMUSEMENT = "AMUSEMENT"                     # 즐거움
-    ANXIETY = "ANXIETY"                         # 걱정
-    AWE = "AWE"                                 # 경외감
-    AWKWARDNESS = "AWKWARDNESS"                 # 어색함
-    BOREDOM = "BOREDOM"                         # 지루함
-    CALMNESS = "CALMNESS"                       # 차분함
-    CONFUSION = "CONFUSION"                     # 혼란스러움
-    CRAVING = "CRAVING"                         # 간절함
-    DISGUST = "DISGUST"                         # 역겨움
-    EMPATHETIC_PAIN = "EMPATHETIC_PAIN"         # 공감적 고통
-    ENTRANCEMENT = "ENTRANCEMENT"               # 황홀경
-    ENVY = "ENVY"                               # 부러움, 질투
-    EXCITEMENT = "EXCITEMENT"                   # 흥분됨, 신남
-    FEAR = "FEAR"                               # 두려움
-    HORROR = "HORROR"                           # 공포
-    INTEREST = "INTEREST"                       # 흥미, 호기심
-    JOY = "JOY"                                 # 기쁨
-    NOSTALGIA = "NOSTALGIA"                     # 향수, 그리움
-    ROMANCE = "ROMANCE"                         # 로맨스
-    SADNESS = "SADNESS"                         # 슬픔
-    SATISFACTION = "SATISFACTION"               # 만족
-    SYMPATHY = "SYMPATHY"                       # 공감
-    TRIUMPH = "TRIUMPH"                         # 승리감
+# 1. 플루치크(Plutchik)의 8가지 기본 감정을 고정된 값(Enum)으로 정의합니다.
+class Emotion(str, Enum):
+    JOY = "JOY"                     # 기쁨
+    TRUST = "TRUST"                 # 신뢰
+    FEAR = "FEAR"                   # 공포
+    SURPRISE = "SURPRISE"           # 놀람
+    SADNESS = "SADNESS"             # 슬픔
+    DISGUST = "DISGUST"             # 혐오
+    ANGER = "ANGER"                 # 분노
+    ANTICIPATION = "ANTICIPATION"   # 기대
 
 # 출력용: 감정별 한글 이름
 EMOTION_DISPLAY = {
-    Emotion26.ADMIRATION: "존경",
-    Emotion26.ADORATION: "흠모",
-    Emotion26.AESTHETIC_APPRECIATION: "심미적 감상",
-    Emotion26.AMUSEMENT: "즐거움",
-    Emotion26.ANXIETY: "걱정",
-    Emotion26.AWE: "경외감",
-    Emotion26.AWKWARDNESS: "어색함",
-    Emotion26.BOREDOM: "지루함",
-    Emotion26.CALMNESS: "차분함",
-    Emotion26.CONFUSION: "혼란스러움",
-    Emotion26.CRAVING: "간절함",
-    Emotion26.DISGUST: "역겨움",
-    Emotion26.EMPATHETIC_PAIN: "공감적 고통",
-    Emotion26.ENTRANCEMENT: "황홀경",
-    Emotion26.ENVY: "부러움, 질투",
-    Emotion26.EXCITEMENT: "흥분됨, 신남",
-    Emotion26.FEAR: "두려움",
-    Emotion26.HORROR: "공포",
-    Emotion26.INTEREST: "흥미, 호기심",
-    Emotion26.JOY: "기쁨",
-    Emotion26.NOSTALGIA: "향수, 그리움",
-    Emotion26.ROMANCE: "로맨스",
-    Emotion26.SADNESS: "슬픔",
-    Emotion26.SATISFACTION: "만족",
-    Emotion26.SYMPATHY: "공감",
-    Emotion26.TRIUMPH: "승리감",
+    Emotion.JOY: "기쁨",
+    Emotion.TRUST: "신뢰",
+    Emotion.FEAR: "공포",
+    Emotion.SURPRISE: "놀람",
+    Emotion.SADNESS: "슬픔",
+    Emotion.DISGUST: "혐오",
+    Emotion.ANGER: "분노",
+    Emotion.ANTICIPATION: "기대",
+}
+
+# 플루치크의 합성 감정: 두 기본 감정의 조합 → 합성 감정 이름 (순서 무관)
+E = Emotion
+COMPOSITE_EMOTIONS = {
+    # 1차 이중감정 (인접한 감정)
+    frozenset({E.JOY, E.TRUST}): "사랑",
+    frozenset({E.TRUST, E.FEAR}): "순종",
+    frozenset({E.FEAR, E.SURPRISE}): "경외",
+    frozenset({E.SURPRISE, E.SADNESS}): "반감",
+    frozenset({E.SADNESS, E.DISGUST}): "자책",
+    frozenset({E.DISGUST, E.ANGER}): "경멸",
+    frozenset({E.ANGER, E.ANTICIPATION}): "공격성",
+    frozenset({E.ANTICIPATION, E.JOY}): "낙관",
+    # 2차 이중감정 (한 칸 건너뛴 감정)
+    frozenset({E.JOY, E.FEAR}): "죄책감",
+    frozenset({E.FEAR, E.SADNESS}): "절망",
+    frozenset({E.SADNESS, E.ANGER}): "시기",
+    frozenset({E.ANGER, E.JOY}): "자부심",
+    frozenset({E.TRUST, E.SURPRISE}): "호기심",
+    frozenset({E.SURPRISE, E.DISGUST}): "불신",
+    frozenset({E.DISGUST, E.ANTICIPATION}): "냉소",
+    frozenset({E.ANTICIPATION, E.TRUST}): "희망",
+    # 3차 이중감정 (두 칸 건너뛴 감정)
+    frozenset({E.JOY, E.SURPRISE}): "큰 기쁨",
+    frozenset({E.SURPRISE, E.ANGER}): "격분",
+    frozenset({E.ANGER, E.TRUST}): "우월감",
+    frozenset({E.TRUST, E.SADNESS}): "감상적임",
+    frozenset({E.SADNESS, E.ANTICIPATION}): "비관",
+    frozenset({E.ANTICIPATION, E.FEAR}): "염려",
+    frozenset({E.FEAR, E.DISGUST}): "수치심",
+    frozenset({E.DISGUST, E.JOY}): "불건전한 흥미",
+    # 반대되는 감정의 결합
+    frozenset({E.JOY, E.SADNESS}): "씁쓸함",
+    frozenset({E.TRUST, E.DISGUST}): "애증",
+    frozenset({E.FEAR, E.ANGER}): "얼어붙음",
+    frozenset({E.SURPRISE, E.ANTICIPATION}): "혼란스러움",
 }
 
 # 리소스 기준 폴더 (PyInstaller 빌드 시에는 _MEIPASS 기준)
@@ -80,19 +81,23 @@ def find_neologisms(text: str) -> list[str]:
     # 한 글자 신조어는 일반 단어에 너무 자주 걸리므로 두 글자 이상만 찾습니다.
     return [word for word in NEOLOGISMS if len(word) >= 2 and word in text]
 
-def build_state(text: str, neologisms: list[str]) -> str:
+def build_state(text: str, neologisms: list[str], extra_reference: str = "") -> str:
     # 신조어가 있으면 용례를 참고 자료로 덧붙여 모델이 뜻을 파악할 수 있게 합니다.
-    if not neologisms:
+    if not neologisms and not extra_reference:
         return text
-    lines = ["[분석할 문장]", text, "", "[참고: 위 문장에 쓰인 신조어의 용례. 감정 판단 대상이 아니며 신조어의 뜻을 이해하는 데만 사용]"]
-    for word in neologisms:
-        for question, answer in NEOLOGISMS[word]:
-            lines.append(f"- {word}: \"{question}\" / \"{answer}\"")
+    lines = ["[분석할 문장]", text]
+    if neologisms:
+        lines += ["", "[참고: 위 문장에 쓰인 신조어의 용례. 감정 판단 대상이 아니며 신조어의 뜻을 이해하는 데만 사용]"]
+        for word in neologisms:
+            for question, answer in NEOLOGISMS[word]:
+                lines.append(f"- {word}: \"{question}\" / \"{answer}\"")
+    if extra_reference:
+        lines += ["", extra_reference]
     return "\n".join(lines)
 
-def print_emotion_image(emotion: Emotion26):
-    # iTerm2 인라인 이미지 프로토콜로 출력 (JOY처럼 이미지가 없으면 생략)
-    path = EMOTION_IMAGE_DIR / f"{emotion.value}.png"
+def print_emotion_image(emotion: Emotion):
+    # iTerm2 인라인 이미지 프로토콜로 출력 (이미지가 없는 감정은 생략)
+    path = EMOTION_IMAGE_DIR / f"{EMOTION_DISPLAY[emotion]}.png"
     if not path.exists():
         return
     data = base64.b64encode(path.read_bytes()).decode()
@@ -100,23 +105,19 @@ def print_emotion_image(emotion: Emotion26):
 
 # 2. GPT 모델이 응답할 JSON 구조를 Pydantic 모델로 강제합니다 (Structured Outputs).
 class EmotionAnalysisResponse(BaseModel):
-    primary_emotion: Emotion26      # 가장 주된 감정
-    secondary_emotion: Emotion26    # 부가적인 감정
+    primary_emotion: Emotion      # 가장 주된 감정
+    secondary_emotion: Emotion    # 부가적인 감정
     confidence_score: float         # 판독 신뢰도 (0.0 ~ 1.0)
     intensity: int                  # 감정의 강도 (1 ~ 9)
     advice: str | None              # 부정적인 감정이 강할 때의 대응 코멘트 (해당 없으면 None)
 
 # 부정적인 감정: 주 감정이 이 중 하나이고 강도가 ADVICE_MIN_INTENSITY 이상이면 대응 코멘트를 받습니다.
-NEGATIVE_EMOTIONS = [
-    Emotion26.ANXIETY, Emotion26.AWKWARDNESS, Emotion26.BOREDOM, Emotion26.CONFUSION,
-    Emotion26.DISGUST, Emotion26.EMPATHETIC_PAIN, Emotion26.ENVY, Emotion26.FEAR,
-    Emotion26.HORROR, Emotion26.SADNESS,
-]
+NEGATIVE_EMOTIONS = [Emotion.FEAR, Emotion.SADNESS, Emotion.DISGUST, Emotion.ANGER]
 ADVICE_MIN_INTENSITY = 7
 
 SYSTEM_PROMPT = """너는 한국어 문장에 담긴 감정을 판독한다.
 
-아래 26가지 감정 중 가장 두드러진 감정을 primary_emotion으로, 함께 나타나는 감정을 secondary_emotion으로 고른다. 두 감정은 반드시 서로 달라야 한다.
+아래 8가지 기본 감정 중 가장 두드러진 감정을 primary_emotion으로, 함께 나타나는 감정을 secondary_emotion으로 고른다. 두 감정은 반드시 서로 달라야 한다.
 {criteria}
 
 intensity는 primary_emotion의 강도이며 1~9 정수로 답한다.
@@ -126,70 +127,61 @@ confidence_score는 primary_emotion 판단에 대한 확신도로 0.0~1.0 사이
 
 advice: primary_emotion이 부정적인 감정({negative}) 중 하나이고 intensity가 {min_intensity} 이상이면, 이 감정을 느끼는 사람이 지금 해볼 수 있는 대응 방법을 2~3문장의 따뜻한 한국어 존댓말로 쓴다. 그 외에는 null로 둔다.
 
-입력에 [참고] 섹션이 있으면 신조어의 뜻을 이해하는 데만 쓰고, 감정 판단 대상으로 삼지 않는다."""
+입력에 신조어 용례 [참고] 섹션이 있으면 신조어의 뜻을 이해하는 데만 쓰고, 감정 판단 대상으로 삼지 않는다.
+{extra_rules}"""
+
+# Jev(비교 실험)와 GPT 모델이 8가지 기본 감정을 정확히 분류할 수 있도록 각 감정의 의미(기준)를 딕셔너리로 정의합니다.
+# 플루치크 감정의 바퀴의 강도 3단계(약함 - 기본 - 강함, 나무위키 '로버트 플루치크' 표기)와
+# 각 감정이 이끄는 행동 경향을 함께 적어, 약하거나 강한 형태의 감정도 같은 기본 감정으로 묶이게 합니다.
+EMOTION_CRITERIA = {
+    Emotion.JOY.value: "평안 - 기쁨 - 황홀. 원하는 것을 얻거나 일이 잘되어 즐겁고 만족스러움",
+    Emotion.TRUST.value: "승인 - 신뢰 - 존경. 사람이나 대상을 인정하고 믿으며, 감탄하거나 우러러봄",
+    Emotion.FEAR.value: "불안 - 공포 - 극심한 공포. 위협이나 나쁜 일이 닥칠까 봐 걱정되고 피하고 싶음",
+    Emotion.SURPRISE.value: "신경쓰임 - 놀람 - 깜짝 놀람. 예상하지 못한 일에 주의가 쏠리고 어리둥절함",
+    Emotion.SADNESS.value: "수심 - 슬픔 - 비탄. 무언가를 잃거나 어찌할 수 없어 마음이 가라앉고 괴로움",
+    Emotion.DISGUST.value: "지루함 - 혐오 - 증오. 대상이 싫고 역겨워 거부하거나 멀리하고 싶음",
+    Emotion.ANGER.value: "짜증 - 분노 - 격노. 부당한 대우나 방해에 화가 나 맞서거나 따지고 싶음",
+    Emotion.ANTICIPATION.value: "관심 - 기대 - 경계. 앞으로 일어날 일을 궁금해하고 기다리거나 대비함",
+}
+
+INTENSITY_CRITERIA = [
+    "1점: 감정이 아주 희미하게 느껴짐",
+    "2점: 감정이 약하게 느껴짐",
+    "3점: 감정이 조금 느껴짐",
+    "4점: 감정이 어느 정도 느껴짐",
+    "5점: 감정이 뚜렷하고 일반적인 수준으로 느껴짐",
+    "6점: 감정이 꽤 강하게 느껴짐",
+    "7점: 감정이 강하게 느껴짐 (행동에 영향을 줄 정도)",
+    "8점: 감정이 매우 강하게 느껴짐 (이성적 판단이 흐려질 정도)",
+    "9점: 감정이 통제하기 힘들 정도로 극도로 강렬함"
+]
 
 # 3. GPT API 호출 함수
-def analyze_emotion_with_gpt(input_text: str, neologisms: list[str]) -> EmotionAnalysisResponse:
+def analyze_emotion_with_gpt(input_text: str, neologisms: list[str], extra_rules: str = "", extra_reference: str = "",
+                             text_format: type[BaseModel] = EmotionAnalysisResponse, model: str = "gpt-4.1",
+                             return_usage: bool = False) -> EmotionAnalysisResponse:
     load_dotenv()
 
-    # 모델이 26가지 감정을 정확히 분류할 수 있도록 각 감정의 의미(기준)를 딕셔너리로 정의합니다.
-    emotion_criteria = {
-        Emotion26.ADMIRATION.value: "존경하거나 우러러보는 감정",
-        Emotion26.ADORATION.value: "깊이 흠모하거나 애정을 느끼는 감정",
-        Emotion26.AESTHETIC_APPRECIATION.value: "예술이나 아름다움을 감상하는 감정",
-        Emotion26.AMUSEMENT.value: "재미있거나 즐거운 감정",
-        Emotion26.ANXIETY.value: "걱정, 불안, 초조함",
-        Emotion26.AWE.value: "경외감, 압도되는 느낌",
-        Emotion26.AWKWARDNESS.value: "어색하고 민망한 감정",
-        Emotion26.BOREDOM.value: "지루함, 따분함",
-        Emotion26.CALMNESS.value: "차분하고 평온한 상태",
-        Emotion26.CONFUSION.value: "혼란스럽거나 당혹스러운 감정",
-        Emotion26.CRAVING.value: "무언가를 간절히 원하거나 갈망함",
-        Emotion26.DISGUST.value: "역겨움, 혐오감, 강한 불쾌감",
-        Emotion26.EMPATHETIC_PAIN.value: "타인의 고통에 공감하여 느끼는 아픔",
-        Emotion26.ENTRANCEMENT.value: "무언가에 매료된 황홀경",
-        Emotion26.ENVY.value: "부러움이나 질투",
-        Emotion26.EXCITEMENT.value: "흥분되고 신나는 감정",
-        Emotion26.FEAR.value: "두려움, 무서움",
-        Emotion26.HORROR.value: "소름 끼치는 공포",
-        Emotion26.INTEREST.value: "흥미, 호기심, 관심",
-        Emotion26.JOY.value: "기쁨, 행복함",
-        Emotion26.NOSTALGIA.value: "과거에 대한 향수나 그리움",
-        Emotion26.ROMANCE.value: "로맨틱한 감정",
-        Emotion26.SADNESS.value: "슬픔, 우울함",
-        Emotion26.SATISFACTION.value: "만족스러움",
-        Emotion26.SYMPATHY.value: "타인에 대한 동정이나 공감",
-        Emotion26.TRIUMPH.value: "승리감, 성취감"
-    }
-
-    intensity_criteria = [
-        "1점: 감정이 아주 희미하게 느껴짐",
-        "2점: 감정이 약하게 느껴짐",
-        "3점: 감정이 조금 느껴짐",
-        "4점: 감정이 어느 정도 느껴짐",
-        "5점: 감정이 뚜렷하고 일반적인 수준으로 느껴짐",
-        "6점: 감정이 꽤 강하게 느껴짐",
-        "7점: 감정이 강하게 느껴짐 (행동에 영향을 줄 정도)",
-        "8점: 감정이 매우 강하게 느껴짐 (이성적 판단이 흐려질 정도)",
-        "9점: 감정이 통제하기 힘들 정도로 극도로 강렬함"
-    ]
-
     system_prompt = SYSTEM_PROMPT.format(
-        criteria="\n".join(f"- {name}: {meaning}" for name, meaning in emotion_criteria.items()),
-        intensity="\n".join(intensity_criteria),
+        criteria="\n".join(f"- {name}: {meaning}" for name, meaning in EMOTION_CRITERIA.items()),
+        intensity="\n".join(INTENSITY_CRITERIA),
         negative=", ".join(emotion.value for emotion in NEGATIVE_EMOTIONS),
         min_intensity=ADVICE_MIN_INTENSITY,
+        extra_rules=extra_rules,
     )
 
     client = OpenAI()
     response = client.responses.parse(
-        model="gpt-4.1",
+        model=model,
         input=[
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": build_state(input_text, neologisms)},
+            {"role": "user", "content": build_state(input_text, neologisms, extra_reference)},
         ],
-        text_format=EmotionAnalysisResponse,
+        text_format=text_format,
     )
+    # return_usage=True면 비용 비교용으로 토큰 사용량을 함께 돌려줍니다.
+    if return_usage:
+        return response.output_parsed, response.usage
     return response.output_parsed
 
 # 4. 프로그램 실행의 진입점이 되는 main 함수
@@ -212,6 +204,9 @@ def main():
     print(f"주 감정: {primary_name}")
     print_emotion_image(analysis.secondary_emotion)
     print(f"부 감정: {secondary_name}")
+    composite = COMPOSITE_EMOTIONS.get(frozenset({analysis.primary_emotion, analysis.secondary_emotion}))
+    if composite:  # 두 감정이 같게 나오면 합성 감정이 없음
+        print(f"합성 감정: {composite} ({primary_name} + {secondary_name})")
     print(f"강도:   {intensity_bar} ({analysis.intensity}/9)")
     print(f"신뢰도: {analysis.confidence_score:.0%}")
     if analysis.advice:
