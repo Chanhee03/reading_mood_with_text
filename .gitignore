@@ -11,3 +11,20 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# AI Hub 데이터 (재배포 금지)
+한국어 감정 정보가 포함된 연속적 대화 데이터셋/
+
+# 외부 말뭉치(AI Hub·국립국어원)에서 뽑은 평가 세트 (재배포 금지)
+data/eval_external.json
+data/eval_dev.json
+
+# 국립국어원 말뭉치 (재배포 금지)
+NIKL_EA_2024/
+
+# 교수님 연구 자료 (재배포 금지)
+감성사전.xlsx
+data/sentiment.json
+
+# 평가 실행 결과 (평가 문장 원문 포함, 재배포 금지)
+results/
