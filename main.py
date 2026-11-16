@@ -4,6 +4,7 @@ import readline  # input()에서 한글을 백스페이스로 지울 때 바이�
 import sys
 from enum import Enum
 from pathlib import Path
+from kiwipiepy import Kiwi
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -81,6 +82,42 @@ def find_neologisms(text: str) -> list[str]:
     # 한 글자 신조어는 일반 단어에 너무 자주 걸리므로 두 글자 이상만 찾습니다.
     return [word for word in NEOLOGISMS if len(word) >= 2 and word in text]
 
+# 감성사전 (build_sentiment.py로 생성). 교수님 연구 자료라 저장소에 없으므로, 파일이 없으면 감성사전 없이 판독합니다.
+SENTIMENT_PATH = BASE_DIR / "data" / "sentiment.json"
+SENTIMENT = json.loads(SENTIMENT_PATH.read_text()) if SENTIMENT_PATH.exists() else {}
+kiwi = Kiwi() if SENTIMENT else None
+
+def find_sentiment_words(text: str) -> list[str]:
+    if not SENTIMENT:
+        return []
+    # 형태소 분석으로 활용형을 기본형으로 돌려 사전과 맞춥니다. (슬퍼서 → 슬프다, 우울하고 → 우울하다)
+    tokens = kiwi.tokenize(text)
+    found = []
+    for i, token in enumerate(tokens):
+        candidates = []
+        if token.tag in ("VV", "VA"):
+            candidates.append(token.form + "다")
+        elif token.tag in ("NNG", "NNP", "XR", "MAG"):
+            # 명사 + 하다/되다/스럽다 등 파생어가 사전에 있으면 그쪽을 우선합니다.
+            if i + 1 < len(tokens) and tokens[i + 1].tag in ("XSA", "XSV"):
+                candidates.append(token.form + tokens[i + 1].form + "다")
+            # 한 글자 명사·부사는 일반 단어와 너무 자주 겹쳐 제외합니다.
+            if len(token.form) >= 2:
+                candidates.append(token.form)
+        for word in candidates:
+            if word in SENTIMENT:
+                if word not in found:
+                    found.append(word)
+                break
+    return found
+
+def sentiment_reference(words: list[str]) -> str:
+    lines = ["[참고: 감성사전. 1=매우 부정 ~ 7=매우 긍정, 단어의 사전적 극성이며 문맥이 우선]"]
+    for word in words:
+        for score, meaning in SENTIMENT[word]:
+            lines.append(f"- {word}({score}): {meaning}")
+    return "\n".join(lines)
+
 def build_state(text: str, neologisms: list[str], extra_reference: str = "") -> str:
     # 신조어가 있으면 용례를 참고 자료로 덧붙여 모델이 뜻을 파악할 수 있게 합니다.
     if not neologisms and not extra_reference:
@@ -114,6 +151,22 @@ class EmotionAnalysisResponse(BaseModel):
 # 부정적인 감정: 주 감정이 이 중 하나이고 강도가 ADVICE_MIN_INTENSITY 이상이면 대응 코멘트를 받습니다.
 NEGATIVE_EMOTIONS = [Emotion.FEAR, Emotion.SADNESS, Emotion.DISGUST, Emotion.ANGER]
 ADVICE_MIN_INTENSITY = 7
+
+# 감성사전 근거단어 방식: 평가(1,200문장)에서 가장 정확했던 구성으로, 앱도 이 방식으로 판독합니다.
+RULE_EVIDENCE = """
+입력에 감성사전 [참고] 섹션이 있으면 그 단어들 중 실제로 화자의 감정을 드러내는 단어만 골라 evidence_words에 넣는다.
+- 문맥상 감정과 무관하거나 뜻이 다르게 쓰인 단어(동음이의어, 부정, 반어, 대상 묘사)는 넣지 않는다.
+- 해당하는 단어가 없으면 빈 목록으로 둔다.
+- primary_emotion은 evidence_words와 문장 전체 맥락을 함께 보고 정한다."""
+
+# 방식 3 응답: 근거 단어를 먼저 고르고 나서 감정을 판단하도록 evidence_words를 맨 앞에 둡니다.
+class EvidenceResponse(BaseModel):
+    evidence_words: list[str]
+    primary_emotion: Emotion
+    secondary_emotion: Emotion
+    confidence_score: float
+    intensity: int
+    advice: str | None
 
 SYSTEM_PROMPT = """너는 한국어 문장에 담긴 감정을 판독한다.
 
@@ -191,7 +244,9 @@ def main():
     
     # 신조어 탐지 후 API 호출 및 결과 받아오기
     neologisms = find_neologisms(customer_review)
-    analysis = analyze_emotion_with_gpt(customer_review, neologisms)
+    words = find_sentiment_words(customer_review)
+    reference = sentiment_reference(words) if words else ""
+    analysis = analyze_emotion_with_gpt(customer_review, neologisms, RULE_EVIDENCE, reference, EvidenceResponse)
         
     primary_name = EMOTION_DISPLAY[analysis.primary_emotion]
     secondary_name = EMOTION_DISPLAY[analysis.secondary_emotion]
@@ -200,6 +255,8 @@ def main():
     print("\n[분석 완료]")
     if neologisms:
         print(f"신조어: {', '.join(neologisms)}")
+    if words and analysis.evidence_words:  # 감성사전이 없으면 모델이 근거 단어를 지어낼 수 있어 표시하지 않음
+        print(f"근거 단어: {', '.join(analysis.evidence_words)}")
     print_emotion_image(analysis.primary_emotion)
     print(f"주 감정: {primary_name}")
     print_emotion_image(analysis.secondary_emotion)

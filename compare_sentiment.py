@@ -26,16 +26,13 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
-from kiwipiepy import Kiwi
 from pydantic import BaseModel
 from typesafe_sdk import Choice, Score, TypeSafeClient
 
 from main import (ADVICE_MIN_INTENSITY, BASE_DIR, EMOTION_CRITERIA, EMOTION_DISPLAY, INTENSITY_CRITERIA,
-                  NEGATIVE_EMOTIONS, SYSTEM_PROMPT, Emotion, EmotionAnalysisResponse, analyze_emotion_with_gpt,
-                  build_state, find_neologisms)
-
-SENTIMENT = json.loads((BASE_DIR / "data" / "sentiment.json").read_text())
-kiwi = Kiwi()
+                  NEGATIVE_EMOTIONS, RULE_EVIDENCE, SENTIMENT, SYSTEM_PROMPT, Emotion, EmotionAnalysisResponse,
+                  EvidenceResponse, analyze_emotion_with_gpt, build_state, find_neologisms, find_sentiment_words,
+                  sentiment_reference)
 
 # 사전 점수만 보면 틀리기 쉬운 문장(부정어, 반어, 관용 표현, 대상 묘사)을 섞어 두었습니다.
 TEST_SENTENCES = [
@@ -51,37 +48,6 @@ TEST_SENTENCES = [
     "그냥 오늘은 평범한 하루였어",
 ]
 
-# ---------------------------------------------------------------- 감성사전 매칭
-
-def find_sentiment_words(text: str) -> list[str]:
-    # 형태소 분석으로 활용형을 기본형으로 돌려 사전과 맞춥니다. (슬퍼서 → 슬프다, 우울하고 → 우울하다)
-    tokens = kiwi.tokenize(text)
-    found = []
-    for i, token in enumerate(tokens):
-        candidates = []
-        if token.tag in ("VV", "VA"):
-            candidates.append(token.form + "다")
-        elif token.tag in ("NNG", "NNP", "XR", "MAG"):
-            # 명사 + 하다/되다/스럽다 등 파생어가 사전에 있으면 그쪽을 우선합니다.
-            if i + 1 < len(tokens) and tokens[i + 1].tag in ("XSA", "XSV"):
-                candidates.append(token.form + tokens[i + 1].form + "다")
-            # 한 글자 명사·부사는 일반 단어와 너무 자주 겹쳐 제외합니다.
-            if len(token.form) >= 2:
-                candidates.append(token.form)
-        for word in candidates:
-            if word in SENTIMENT:
-                if word not in found:
-                    found.append(word)
-                break
-    return found
-
-def sentiment_reference(words: list[str]) -> str:
-    lines = ["[참고: 감성사전. 1=매우 부정 ~ 7=매우 긍정, 단어의 사전적 극성이며 문맥이 우선]"]
-    for word in words:
-        for score, meaning in SENTIMENT[word]:
-            lines.append(f"- {word}({score}): {meaning}")
-    return "\n".join(lines)
-
 # ---------------------------------------------------------------- 비교할 방식들
 
 RULE_POLARITY = """
@@ -96,21 +62,6 @@ RULE_INTENSITY = """
 - 3·6점 단어만 있으면 강도를 과하게 올리지 않는다.
 - 단어가 감정 주체가 아닌 대상·사건을 묘사할 때(예: "살인자가 나오는 영화 봤는데 재밌었어")는 강도 판단에서 제외한다.
 - 감정의 종류는 이 점수로 정하지 않는다."""
-
-RULE_EVIDENCE = """
-입력에 감성사전 [참고] 섹션이 있으면 그 단어들 중 실제로 화자의 감정을 드러내는 단어만 골라 evidence_words에 넣는다.
-- 문맥상 감정과 무관하거나 뜻이 다르게 쓰인 단어(동음이의어, 부정, 반어, 대상 묘사)는 넣지 않는다.
-- 해당하는 단어가 없으면 빈 목록으로 둔다.
-- primary_emotion은 evidence_words와 문장 전체 맥락을 함께 보고 정한다."""
-
-# 방식 3 응답: 근거 단어를 먼저 고르고 나서 감정을 판단하도록 evidence_words를 맨 앞에 둡니다.
-class EvidenceResponse(BaseModel):
-    evidence_words: list[str]
-    primary_emotion: Emotion
-    secondary_emotion: Emotion
-    confidence_score: float
-    intensity: int
-    advice: str | None
 
 RULE_JEV = """
 입력에 Jev [참고] 섹션이 있으면 별도 감정 분류 모델(Jev)의 1차 분류 결과로 참고한다.
@@ -257,6 +208,8 @@ def main():
     parser.add_argument("--eval", help="정답 라벨 JSON 파일")
     parser.add_argument("--save", help="호출별 결과를 저장·이어받을 JSONL 파일")
     args = parser.parse_args()
+    if not SENTIMENT and any(v != "기존" and v != "Jev→LLM" and v != "Jev 단독" for v in args.variants.split(",")):
+        parser.error("감성사전을 쓰는 방식에는 data/sentiment.json이 필요합니다 (python build_sentiment.py)")
 
     labels = {}
     if args.eval:
