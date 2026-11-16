@@ -5,7 +5,9 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[('emotions', 'emotions'), ('data', 'data')],
+    # data/ 폴더째 넣으면 재배포 금지 자료(감성사전, 평가 세트)까지 실행 파일에 들어가므로, 앱에 필요한 신조어 사전만 넣습니다.
+    # 감성사전이 빠진 실행 파일은 감성사전 없이 판독합니다.
+    datas=[('emotions', 'emotions'), ('data/neologisms.json', 'data')],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
