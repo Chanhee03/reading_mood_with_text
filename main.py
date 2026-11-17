@@ -83,7 +83,9 @@ def find_neologisms(text: str) -> list[str]:
     return [word for word in NEOLOGISMS if len(word) >= 2 and word in text]
 
 # 감성사전 (build_sentiment.py로 생성). 교수님 연구 자료라 저장소에 없으므로, 파일이 없으면 감성사전 없이 판독합니다.
-SENTIMENT_PATH = BASE_DIR / "data" / "sentiment.json"
+# 실행 파일에는 감성사전을 넣지 않으므로, 실행 파일과 같은 폴더의 data/sentiment.json을 읽습니다.
+SENTIMENT_DIR = Path(sys.executable).parent if getattr(sys, "frozen", False) else BASE_DIR
+SENTIMENT_PATH = SENTIMENT_DIR / "data" / "sentiment.json"
 SENTIMENT = json.loads(SENTIMENT_PATH.read_text()) if SENTIMENT_PATH.exists() else {}
 kiwi = Kiwi() if SENTIMENT else None
 

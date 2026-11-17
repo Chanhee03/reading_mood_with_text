@@ -1,4 +1,5 @@
 # -*- mode: python ; coding: utf-8 -*-
+from PyInstaller.utils.hooks import collect_data_files
 
 
 a = Analysis(
@@ -6,9 +7,10 @@ a = Analysis(
     pathex=[],
     binaries=[],
     # data/ 폴더째 넣으면 재배포 금지 자료(감성사전, 평가 세트)까지 실행 파일에 들어가므로, 앱에 필요한 신조어 사전만 넣습니다.
-    # 감성사전이 빠진 실행 파일은 감성사전 없이 판독합니다.
-    datas=[('emotions', 'emotions'), ('data/neologisms.json', 'data')],
-    hiddenimports=[],
+    # 감성사전은 실행 파일 옆 data/sentiment.json에서 읽고, 없으면 감성사전 없이 판독합니다.
+    # 감성사전 단어를 찾는 형태소 분석기(kiwipiepy)의 모델 파일은 함께 넣습니다.
+    datas=[('emotions', 'emotions'), ('data/neologisms.json', 'data')] + collect_data_files('kiwipiepy_model'),
+    hiddenimports=['kiwipiepy_model'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
