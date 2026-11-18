@@ -72,7 +72,7 @@ COMPOSITE_EMOTIONS = {
 # 리소스 기준 폴더 (PyInstaller 빌드 시에는 _MEIPASS 기준)
 BASE_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
 
-# 감정별 테루테루보즈 이미지 폴더
+# 감정별 해양이 이미지 폴더
 EMOTION_IMAGE_DIR = BASE_DIR / "emotions"
 
 # 신조어별 예시 대화 사전 (KoCulture-Dialogues, build_neologisms.py로 생성)
