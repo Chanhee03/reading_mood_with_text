@@ -208,7 +208,7 @@ python compare_sentiment.py --eval data/eval_external.json --models gpt-4.1 \
 ```
 main.py              # 감정 분석 CLI (신조어 탐지, GPT 호출, 결과 출력)
 main.spec            # PyInstaller 빌드 설정
-emotions/            # 감정별 테루테루보즈 이미지 (<한글 감정 이름>.png, 예: 기쁨.png)
+emotions/            # 감정별 해양이 이미지 (<한글 감정 이름>.png, 예: 기쁨.png)
 data/neologisms.json # 신조어별 예시 대화 사전
 build_neologisms.py  # 신조어 사전 생성 스크립트
 build_eval_set.py    # 외부 말뭉치에서 평가·개발용 세트 생성
